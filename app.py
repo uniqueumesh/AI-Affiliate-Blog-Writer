@@ -1,3 +1,33 @@
+# --- Product Extraction Function ---
+def extract_products_from_summaries(summaries, gemini_api_key):
+    """
+    Use Gemini to extract a list of Amazon products (with names and URLs if possible) from competitor blog summaries.
+    Returns a list of product dicts: { 'name': ..., 'url': ... }
+    """
+    if not summaries or not gemini_api_key:
+        return []
+    summaries_text = '\n\n'.join([f"Title: {s['title']}\nSummary: {s['summary']}" for s in summaries])
+    prompt = f"""
+    Extract a list of Amazon products (with product names and URLs if available) mentioned in the following competitor blog summaries. Return as a JSON array of objects with 'name' and 'url' fields. If no URL is available, leave it blank. Only include real Amazon products, not generic mentions.
+
+    ---
+    {summaries_text}
+    ---
+    """
+    try:
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config={"max_output_tokens": 1024})
+        convo = model.start_chat(history=[])
+        convo.send_message(prompt)
+        import json
+        products = json.loads(convo.last.text)
+        # Validate structure
+        if isinstance(products, list):
+            return [p for p in products if 'name' in p]
+        return []
+    except Exception as e:
+        st.warning(f"Product extraction failed: {e}")
+        return []
 
 import streamlit as st
 import google.generativeai as genai
@@ -54,10 +84,27 @@ def generate_blog_post(input_blog_keywords, input_type, input_tone, input_langua
                 st.markdown(f"**[{s['title']}]({s['url']})**")
                 st.markdown(s['summary'])
                 st.markdown('---')
-        # Use summaries in the prompt for better blog generation
+
+        # --- Product Extraction and User Selection ---
+        st.markdown("**Step 2: Extracting Amazon Products from Competitor Blogs...**")
+        products = extract_products_from_summaries(summaries, gemini_api_key)
+        selected_products = []
+        max_products = 10
+        if products:
+            st.markdown("**Select products to feature in your blog:**")
+            num_to_select = st.slider("How many products to include?", min_value=1, max_value=min(len(products), max_products), value=min(3, len(products)))
+            for i, product in enumerate(products[:max_products]):
+                checked = st.checkbox(f"{product['name']} ({product.get('url','')})", value=(i < num_to_select))
+                if checked:
+                    selected_products.append(product)
+        else:
+            st.info("No Amazon products found in competitor blogs.")
+
+        # Use summaries and selected products in the prompt for better blog generation
         summaries_text = '\n\n'.join([f"Title: {s['title']}\nSummary: {s['summary']}" for s in summaries])
+        products_text = '\n'.join([f"- {p['name']} ({p.get('url','')})" for p in selected_products]) if selected_products else "(No products selected)"
         prompt = f"""
-        You are an experienced SEO strategist and creative content writer who specializes in crafting {input_type} blog posts in {input_language}. Your blog posts are designed to rank highly in search results while deeply engaging readers with a professional yet personable tone.\n\n        ### Task:\n        Write a comprehensive, engaging, and SEO-optimized blog post on the topic below. The blog should:\n        - Be structured for readability with clear headings, subheadings, and bullet points.\n        - Include actionable insights, real-world examples, and personal anecdotes to make the content relatable and practical.\n        - Be written in a {input_tone} tone that balances professionalism with a conversational style.\n\n        ### Requirements:\n        1. **SEO Optimization**:\n           - Use the provided keywords naturally and strategically throughout the content.\n           - Incorporate semantic keywords and related terms to enhance search engine visibility.\n           - Align the content with Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines.\n\n        2. **Content Structure**:\n           - Start with a compelling introduction that hooks the reader and outlines the blog's value.\n           - Organize the content with logical headings and subheadings.\n           - Use bullet points, numbered lists, and short paragraphs for readability.\n\n        3. **Engagement and Value**:\n           - Provide actionable tips, real-world examples, and personal anecdotes.\n           - Include at least one engaging call-to-action (CTA) to encourage reader interaction.\n\n        4. **FAQs Section**:\n           - Include 5 FAQs derived from “People also ask” queries and related search suggestions.\n           - Provide thoughtful, well-researched answers to each question.\n\n        5. **Visual and Multimedia Suggestions**:\n           - Recommend where to include images, infographics, or videos to enhance the content's appeal.\n\n        6. **SEO Metadata**:\n           - Append the following metadata after the main blog content:\n             - A **Blog Title** that is catchy and includes the primary keyword.\n             - A **Meta Description** summarizing the blog post in under 160 characters.\n             - A **URL Slug** that is short, descriptive, and formatted in lowercase with hyphens.\n             - A list of **Hashtags** relevant to the content.\n\n        ### Blog Details:\n        - **Title**: {input_blog_keywords}\n        - **Keywords**: {input_blog_keywords}\n        - **SERP Competitor Summaries**:\n        {summaries_text}\n\n        Now, craft an exceptional blog post that stands out in search results and delivers maximum value to readers.\n        """
+        You are an experienced SEO strategist and creative content writer who specializes in crafting {input_type} blog posts in {input_language}. Your blog posts are designed to rank highly in search results while deeply engaging readers with a professional yet personable tone.\n\n        ### Task:\n        Write a comprehensive, engaging, and SEO-optimized blog post on the topic below. The blog should:\n        - Be structured for readability with clear headings, subheadings, and bullet points.\n        - Include actionable insights, real-world examples, and personal anecdotes to make the content relatable and practical.\n        - Be written in a {input_tone} tone that balances professionalism with a conversational style.\n\n        ### Requirements:\n        1. **SEO Optimization**:\n           - Use the provided keywords naturally and strategically throughout the content.\n           - Incorporate semantic keywords and related terms to enhance search engine visibility.\n           - Align the content with Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines.\n\n        2. **Content Structure**:\n           - Start with a compelling introduction that hooks the reader and outlines the blog's value.\n           - Organize the content with logical headings and subheadings.\n           - Use bullet points, numbered lists, and short paragraphs for readability.\n\n        3. **Engagement and Value**:\n           - Provide actionable tips, real-world examples, and personal anecdotes.\n           - Include at least one engaging call-to-action (CTA) to encourage reader interaction.\n\n        4. **FAQs Section**:\n           - Include 5 FAQs derived from “People also ask” queries and related search suggestions.\n           - Provide thoughtful, well-researched answers to each question.\n\n        5. **Visual and Multimedia Suggestions**:\n           - Recommend where to include images, infographics, or videos to enhance the content's appeal.\n\n        6. **SEO Metadata**:\n           - Append the following metadata after the main blog content:\n             - A **Blog Title** that is catchy and includes the primary keyword.\n             - A **Meta Description** summarizing the blog post in under 160 characters.\n             - A **URL Slug** that is short, descriptive, and formatted in lowercase with hyphens.\n             - A list of **Hashtags** relevant to the content.\n\n        7. **Featured Amazon Products**:\n           - Include and review the following Amazon products in the blog, with honest pros/cons and why they are recommended.\n{products_text}\n\n        ### Blog Details:\n        - **Title**: {input_blog_keywords}\n        - **Keywords**: {input_blog_keywords}\n        - **SERP Competitor Summaries**:\n        {summaries_text}\n\n        Now, craft an exceptional blog post that stands out in search results and delivers maximum value to readers.\n        """
         return generate_text_with_exception_handling(prompt, gemini_api_key)
     return None
 
