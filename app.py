@@ -6,10 +6,11 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 import os
 
 # --- Blog Generation Functions ---
-def generate_blog_post(input_blog_keywords, input_type, input_tone, input_language, metaphor_api_key, gemini_api_key):
+
+def generate_blog_post(input_blog_keywords, input_type, input_tone, input_language, metaphor_api_key, gemini_api_key, num_serp_results):
     serp_results = None
     try:
-        serp_results = metaphor_search_articles(input_blog_keywords, metaphor_api_key)
+        serp_results = metaphor_search_articles(input_blog_keywords, metaphor_api_key, num_serp_results)
     except Exception as err:
         st.error(f"❌ Failed to retrieve search results for {input_blog_keywords}: {err}")
     if serp_results:
@@ -18,12 +19,12 @@ def generate_blog_post(input_blog_keywords, input_type, input_tone, input_langua
         return generate_text_with_exception_handling(prompt, gemini_api_key)
     return None
 
-def metaphor_search_articles(query, api_key):
+def metaphor_search_articles(query, api_key, num_results):
     if not api_key:
         raise ValueError("Metaphor API Key is missing!")
     metaphor = Exa(api_key)
     try:
-        search_response = metaphor.search_and_contents(query, use_autoprompt=True, num_results=5)
+        search_response = metaphor.search_and_contents(query, use_autoprompt=True, num_results=num_results)
         return search_response.results
     except Exception as err:
         st.error(f"Failed in metaphor.search_and_contents: {err}")
@@ -103,7 +104,15 @@ def main():
                     st.error("❌ Gemini API Key is not available! Please provide your API key in the API Configuration section.")
                 else:
                     try:
-                        blog_post = generate_blog_post(input_blog_keywords, blog_type, input_blog_tone, input_blog_language, metaphor_api_key, gemini_api_key)
+                        blog_post = generate_blog_post(
+                            input_blog_keywords,
+                            blog_type,
+                            input_blog_tone,
+                            input_blog_language,
+                            metaphor_api_key,
+                            gemini_api_key,
+                            num_serp_results
+                        )
                         if blog_post:
                             st.subheader('**👩🧕🔬 Your Final Blog Post!**')
                             st.write(blog_post)
