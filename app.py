@@ -19,8 +19,23 @@ def extract_products_from_summaries(summaries, gemini_api_key):
         model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config={"max_output_tokens": 1024})
         convo = model.start_chat(history=[])
         convo.send_message(prompt)
-        import json
-        products = json.loads(convo.last.text)
+        import json, re
+        raw = convo.last.text.strip()
+        # Try direct JSON parse first
+        try:
+            products = json.loads(raw)
+        except Exception:
+            # Try to extract JSON array from text
+            match = re.search(r'(\[.*?\])', raw, re.DOTALL)
+            if match:
+                try:
+                    products = json.loads(match.group(1))
+                except Exception:
+                    st.warning(f"Product extraction failed: Could not parse JSON from Gemini output. Raw output: {raw}")
+                    return []
+            else:
+                st.warning(f"Product extraction failed: No JSON array found in Gemini output. Raw output: {raw}")
+                return []
         # Validate structure
         if isinstance(products, list):
             return [p for p in products if 'name' in p]
@@ -92,11 +107,18 @@ def generate_blog_post(input_blog_keywords, input_type, input_tone, input_langua
         max_products = 10
         if products:
             st.markdown("**Select products to feature in your blog:**")
-            num_to_select = st.slider("How many products to include?", min_value=1, max_value=min(len(products), max_products), value=min(3, len(products)))
-            for i, product in enumerate(products[:max_products]):
-                checked = st.checkbox(f"{product['name']} ({product.get('url','')})", value=(i < num_to_select))
+            if len(products) == 1:
+                # Only one product, just show a single checkbox (checked by default)
+                product = products[0]
+                checked = st.checkbox(f"{product['name']} ({product.get('url','')})", value=True)
                 if checked:
                     selected_products.append(product)
+            else:
+                num_to_select = st.slider("How many products to include?", min_value=1, max_value=min(len(products), max_products), value=min(3, len(products)))
+                for i, product in enumerate(products[:max_products]):
+                    checked = st.checkbox(f"{product['name']} ({product.get('url','')})", value=(i < num_to_select))
+                    if checked:
+                        selected_products.append(product)
         else:
             st.info("No Amazon products found in competitor blogs.")
 
