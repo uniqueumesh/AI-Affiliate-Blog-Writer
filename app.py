@@ -154,7 +154,33 @@ def generate_blog_post(input_blog_keywords, input_type, input_tone, input_langua
         content_gaps_text = f"\n\n### Content Gaps to Address:\n{content_gaps}" if content_gaps else ""
         prompt = f"""
         You are an experienced SEO strategist and creative content writer who specializes in crafting {input_type} blog posts in {input_language}. Your blog posts are designed to rank highly in search results while deeply engaging readers with a professional yet personable tone.\n\n        ### Task:\n        Write a comprehensive, engaging, and SEO-optimized blog post on the topic below. The blog should:\n        - Be structured for readability with clear headings, subheadings, and bullet points.\n        - Include actionable insights, real-world examples, and personal anecdotes to make the content relatable and practical.\n        - Be written in a {input_tone} tone that balances professionalism with a conversational style.\n\n        ### Requirements:\n        1. **SEO Optimization**:\n           - Use the provided keywords naturally and strategically throughout the content.\n           - Incorporate semantic keywords and related terms to enhance search engine visibility.\n           - Align the content with Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines.\n\n        2. **Content Structure**:\n           - Start with a compelling introduction that hooks the reader and outlines the blog's value.\n           - Organize the content with logical headings and subheadings.\n           - Use bullet points, numbered lists, and short paragraphs for readability.\n\n        3. **Engagement and Value**:\n           - Provide actionable tips, real-world examples, and personal anecdotes.\n           - Include at least one engaging call-to-action (CTA) to encourage reader interaction.\n\n        4. **FAQs Section**:\n           - Include 5 FAQs derived from “People also ask” queries and related search suggestions.\n           - Provide thoughtful, well-researched answers to each question.\n\n        5. **Visual and Multimedia Suggestions**:\n           - Recommend where to include images, infographics, or videos to enhance the content's appeal.\n\n        6. **SEO Metadata**:\n           - Append the following metadata after the main blog content:\n             - A **Blog Title** that is catchy and includes the primary keyword.\n             - A **Meta Description** summarizing the blog post in under 160 characters.\n             - A **URL Slug** that is short, descriptive, and formatted in lowercase with hyphens.\n             - A list of **Hashtags** relevant to the content.\n\n        7. **Featured Amazon Products**:\n           - Include and review the following Amazon products in the blog, with honest pros/cons and why they are recommended.\n{products_text}\n{content_gaps_text}\n        ### Blog Details:\n        - **Title**: {input_blog_keywords}\n        - **Keywords**: {input_blog_keywords}\n        - **SERP Competitor Summaries**:\n        {summaries_text}\n\n        Now, craft an exceptional blog post that stands out in search results and delivers maximum value to readers.\n        """
-        return generate_text_with_exception_handling(prompt, gemini_api_key)
+        blog_post = generate_text_with_exception_handling(prompt, gemini_api_key)
+
+        # --- Plagiarism/Originality Check ---
+        st.markdown("**Step 4: Plagiarism/Originality Check**")
+        originality_result = check_blog_originality(blog_post, summaries, gemini_api_key)
+        with st.expander("🕵️ Originality Report", expanded=True):
+            st.markdown(originality_result if originality_result else "Originality check could not be performed.")
+
+        return blog_post
+def check_blog_originality(blog_post, competitor_summaries, gemini_api_key):
+    """
+    Use Gemini to heuristically check if the generated blog post contains significant overlap with competitor summaries.
+    Returns a string with originality assessment and any detected issues.
+    """
+    if not blog_post or not competitor_summaries or not gemini_api_key:
+        return "Insufficient data for originality check."
+    summaries_text = '\n\n'.join([f"Title: {s['title']}\nSummary: {s['summary']}" for s in competitor_summaries])
+    prompt = f"""
+    You are an expert plagiarism checker. Compare the following generated blog post with the competitor blog summaries below. Assess if there is any significant overlap, copied content, or lack of originality. If you find any, list the overlapping sections or phrases. Otherwise, confirm that the blog post is original. Provide a brief originality score (High/Medium/Low) and a short explanation.\n\n---\nGenerated Blog Post:\n{blog_post}\n\n---\nCompetitor Summaries:\n{summaries_text}\n---\n"""
+    try:
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config={"max_output_tokens": 512})
+        convo = model.start_chat(history=[])
+        convo.send_message(prompt)
+        return convo.last.text.strip()
+    except Exception as e:
+        return f"Originality check failed: {e}"
     return None
 
 def metaphor_search_articles(query, api_key, num_results):
