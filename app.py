@@ -7,6 +7,38 @@ import os
 
 # --- Blog Generation Functions ---
 
+def summarize_serp_results(serp_results, gemini_api_key, max_to_summarize=5):
+    """Summarize the content of each SERP/blog result using Gemini."""
+    summaries = []
+    for i, result in enumerate(serp_results[:max_to_summarize]):
+        url = getattr(result, 'url', None)
+        title = getattr(result, 'title', None)
+        # Try all possible content fields
+        content = (
+            getattr(result, 'content', None)
+            or getattr(result, 'extract', None)
+            or getattr(result, 'description', None)
+            or getattr(result, 'snippet', None)
+            or ''
+        )
+        if not content:
+            # If no content, just summarize the title and URL
+            summaries.append({
+                'title': title,
+                'url': url,
+                'summary': f'(No content available to summarize. Title: {title}, URL: {url})'
+            })
+            continue
+        prompt = f"""
+        Summarize the following blog content for competitive analysis. Identify the main topics, structure, and any unique value or product recommendations. Keep the summary concise (5-7 bullet points):\n\nTitle: {title}\nURL: {url}\nContent:\n{content}\n"""
+        summary = generate_text_with_exception_handling(prompt, gemini_api_key)
+        summaries.append({
+            'title': title,
+            'url': url,
+            'summary': summary.strip() if summary else f'(Failed to summarize. Title: {title}, URL: {url})'
+        })
+    return summaries
+
 def generate_blog_post(input_blog_keywords, input_type, input_tone, input_language, metaphor_api_key, gemini_api_key, num_serp_results):
     serp_results = None
     try:
@@ -14,8 +46,18 @@ def generate_blog_post(input_blog_keywords, input_type, input_tone, input_langua
     except Exception as err:
         st.error(f"❌ Failed to retrieve search results for {input_blog_keywords}: {err}")
     if serp_results:
+        # Summarize top SERP/blogs for analysis
+        summaries = summarize_serp_results(serp_results, gemini_api_key, max_to_summarize=min(5, num_serp_results))
+        # Optionally display summaries to user
+        with st.expander("Top Competitor Blog Summaries (SERP Analysis)", expanded=False):
+            for s in summaries:
+                st.markdown(f"**[{s['title']}]({s['url']})**")
+                st.markdown(s['summary'])
+                st.markdown('---')
+        # Use summaries in the prompt for better blog generation
+        summaries_text = '\n\n'.join([f"Title: {s['title']}\nSummary: {s['summary']}" for s in summaries])
         prompt = f"""
-        You are an experienced SEO strategist and creative content writer who specializes in crafting {input_type} blog posts in {input_language}. Your blog posts are designed to rank highly in search results while deeply engaging readers with a professional yet personable tone.\n\n        ### Task:\n        Write a comprehensive, engaging, and SEO-optimized blog post on the topic below. The blog should:\n        - Be structured for readability with clear headings, subheadings, and bullet points.\n        - Include actionable insights, real-world examples, and personal anecdotes to make the content relatable and practical.\n        - Be written in a {input_tone} tone that balances professionalism with a conversational style.\n\n        ### Requirements:\n        1. **SEO Optimization**:\n           - Use the provided keywords naturally and strategically throughout the content.\n           - Incorporate semantic keywords and related terms to enhance search engine visibility.\n           - Align the content with Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines.\n\n        2. **Content Structure**:\n           - Start with a compelling introduction that hooks the reader and outlines the blog's value.\n           - Organize the content with logical headings and subheadings.\n           - Use bullet points, numbered lists, and short paragraphs for readability.\n\n        3. **Engagement and Value**:\n           - Provide actionable tips, real-world examples, and personal anecdotes.\n           - Include at least one engaging call-to-action (CTA) to encourage reader interaction.\n\n        4. **FAQs Section**:\n           - Include 5 FAQs derived from “People also ask” queries and related search suggestions.\n           - Provide thoughtful, well-researched answers to each question.\n\n        5. **Visual and Multimedia Suggestions**:\n           - Recommend where to include images, infographics, or videos to enhance the content's appeal.\n\n        6. **SEO Metadata**:\n           - Append the following metadata after the main blog content:\n             - A **Blog Title** that is catchy and includes the primary keyword.\n             - A **Meta Description** summarizing the blog post in under 160 characters.\n             - A **URL Slug** that is short, descriptive, and formatted in lowercase with hyphens.\n             - A list of **Hashtags** relevant to the content.\n\n        ### Blog Details:\n        - **Title**: {input_blog_keywords}\n        - **Keywords**: {input_blog_keywords}\n        - **Google SERP Results**: {serp_results}\n\n        Now, craft an exceptional blog post that stands out in search results and delivers maximum value to readers.\n        """
+        You are an experienced SEO strategist and creative content writer who specializes in crafting {input_type} blog posts in {input_language}. Your blog posts are designed to rank highly in search results while deeply engaging readers with a professional yet personable tone.\n\n        ### Task:\n        Write a comprehensive, engaging, and SEO-optimized blog post on the topic below. The blog should:\n        - Be structured for readability with clear headings, subheadings, and bullet points.\n        - Include actionable insights, real-world examples, and personal anecdotes to make the content relatable and practical.\n        - Be written in a {input_tone} tone that balances professionalism with a conversational style.\n\n        ### Requirements:\n        1. **SEO Optimization**:\n           - Use the provided keywords naturally and strategically throughout the content.\n           - Incorporate semantic keywords and related terms to enhance search engine visibility.\n           - Align the content with Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) guidelines.\n\n        2. **Content Structure**:\n           - Start with a compelling introduction that hooks the reader and outlines the blog's value.\n           - Organize the content with logical headings and subheadings.\n           - Use bullet points, numbered lists, and short paragraphs for readability.\n\n        3. **Engagement and Value**:\n           - Provide actionable tips, real-world examples, and personal anecdotes.\n           - Include at least one engaging call-to-action (CTA) to encourage reader interaction.\n\n        4. **FAQs Section**:\n           - Include 5 FAQs derived from “People also ask” queries and related search suggestions.\n           - Provide thoughtful, well-researched answers to each question.\n\n        5. **Visual and Multimedia Suggestions**:\n           - Recommend where to include images, infographics, or videos to enhance the content's appeal.\n\n        6. **SEO Metadata**:\n           - Append the following metadata after the main blog content:\n             - A **Blog Title** that is catchy and includes the primary keyword.\n             - A **Meta Description** summarizing the blog post in under 160 characters.\n             - A **URL Slug** that is short, descriptive, and formatted in lowercase with hyphens.\n             - A list of **Hashtags** relevant to the content.\n\n        ### Blog Details:\n        - **Title**: {input_blog_keywords}\n        - **Keywords**: {input_blog_keywords}\n        - **SERP Competitor Summaries**:\n        {summaries_text}\n\n        Now, craft an exceptional blog post that stands out in search results and delivers maximum value to readers.\n        """
         return generate_text_with_exception_handling(prompt, gemini_api_key)
     return None
 
